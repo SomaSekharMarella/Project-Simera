@@ -1,16 +1,73 @@
-# React + Vite
+# Frontend Setup (React + Vite)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This folder contains the dApp UI for the Proof-of-Work governed crowdfunding system.
 
-Currently, two official plugins are available:
+## What is implemented
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Wallet connect (MetaMask)
+- Factory-based campaign listing (no default campaign)
+- Create campaign flow
+- Campaign detail page with:
+  - donate
+  - submit proof (IPFS hash)
+  - vote agree/disagree
+  - finalize vote
+  - creator withdrawal
+  - claim refund
+  - cancel campaign
+  - trigger emergency refund
+- Pinata upload integration for proof files
 
-## React Compiler
+## Prerequisites
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Node.js 18+ (recommended 20+)
+- npm
+- MetaMask wallet on Sepolia
+- Backend factory deployed on Sepolia
 
-## Expanding the ESLint configuration
+## Install dependencies
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+cd Frontend
+npm install
+```
+
+## Environment setup
+
+Create `.env` in `Frontend`:
+
+```env
+VITE_FACTORY_ADDRESS=0xYourFactoryAddressOnSepolia
+VITE_PINATA_JWT=your-pinata-jwt
+VITE_PINATA_GATEWAY=https://gateway.pinata.cloud/ipfs/
+```
+
+Notes:
+- `VITE_FACTORY_ADDRESS` is required.
+- `VITE_PINATA_JWT` is required only if you upload proof directly from UI.
+
+## Run in development
+
+```bash
+npm run dev
+```
+
+## Lint and build
+
+```bash
+npm run lint
+npm run build
+npm run preview
+```
+
+## User flow
+
+1. Connect wallet
+2. Open campaigns list
+3. Create a campaign (if needed)
+4. Donate to campaign
+5. Creator uploads proof and opens vote
+6. Donors vote
+7. Finalize vote
+8. If passed: creator withdraws approved amount
+9. If failed: donors claim partial/full refunds
