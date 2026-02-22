@@ -2,14 +2,7 @@ node_modules
 
 
 # Hardhat files
-/cache
 /artifacts
 
-# TypeChain files
-/typechain
-/typechain-types
-
-# solidity-coverage files
-/coverage
 
 # Hardhat Ignition default folder for deployments against a local node
