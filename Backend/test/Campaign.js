@@ -131,6 +131,31 @@ describe("Campaign", function () {
     expect(remaining).to.equal(ethers.parseEther("4.5"));
   });
 
+  it("allows no-voters to claim refund after approved vote", async function () {
+    const { campaign, creator, donor1, donor2, requestAmount } = await loadFixture(openVoteFixture);
+
+    await campaign.connect(donor1).castVote(true); // 6
+    await campaign.connect(donor2).castVote(false); // 4
+    await campaign.connect(creator).finalizeVote();
+    await campaign.connect(creator).withdrawApprovedAmount();
+
+    expect(await campaign.latestPassedVoteId()).to.equal(1n);
+    const refundableForNoVoter = await campaign.getMaxRefundable(donor2.address);
+    expect(refundableForNoVoter).to.equal(ethers.parseEther("2.6"));
+
+    await expect(() => campaign.connect(donor2).claimDissenterRefund(refundableForNoVoter)).to.changeEtherBalances(
+      [donor2, campaign],
+      [refundableForNoVoter, -refundableForNoVoter]
+    );
+
+    expect(await campaign.getMaxRefundable(donor2.address)).to.equal(0n);
+
+    await expect(campaign.connect(donor1).claimDissenterRefund(ethers.parseEther("0.1"))).to.be.revertedWith(
+      "Only latest no-voters can claim"
+    );
+    expect(requestAmount).to.equal(ethers.parseEther("3.5"));
+  });
+
   it("enforces 35% per proof withdrawal cap", async function () {
     const { campaign, creator } = await loadFixture(deployCampaignFixture);
     await campaign.connect(creator).donate({ value: ethers.parseEther("10") });
@@ -167,12 +192,14 @@ describe("Campaign", function () {
     );
   });
 
-  it("triggers emergency refund after timeout", async function () {
-    const { campaign, emergencyTimeout } = await loadFixture(deployCampaignFixture);
-    const nextTime = (await time.latest()) + emergencyTimeout + 1;
-    await time.increaseTo(nextTime);
-
-    await campaign.triggerEmergencyRefund();
+  it("allows creator to trigger emergency refund immediately", async function () {
+    const { campaign, creator } = await loadFixture(deployCampaignFixture);
+    await campaign.connect(creator).triggerEmergencyRefund();
     expect(await campaign.state()).to.equal(2n);
+  });
+
+  it("blocks non-creator from triggering emergency refund", async function () {
+    const { campaign, donor1 } = await loadFixture(deployCampaignFixture);
+    await expect(campaign.connect(donor1).triggerEmergencyRefund()).to.be.revertedWith("Only creator");
   });
 });

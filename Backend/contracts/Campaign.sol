@@ -52,6 +52,9 @@ contract Campaign {
     mapping(uint256 => VoteRequest) public votes;
     mapping(uint256 => mapping(address => uint256)) public voteWeights;
     mapping(uint256 => mapping(address => bool)) public hasVoted;
+    mapping(uint256 => mapping(address => bool)) public votedNo;
+
+    uint256 public latestPassedVoteId;
 
     bool private locked;
 
@@ -75,6 +78,7 @@ contract Campaign {
     );
     event WithdrawalExecuted(uint256 indexed voteId, uint256 amount);
     event RefundClaimed(address indexed donor, uint256 amount);
+    event DissenterRefundClaimed(address indexed donor, uint256 indexed voteId, uint256 amount);
     event CampaignCancelled();
     event EmergencyRefundTriggered();
     event CampaignStateChanged(CampaignState newState);
@@ -190,6 +194,7 @@ contract Campaign {
             vr.yesWeight += weight;
         } else {
             vr.noWeight += weight;
+            votedNo[voteId][msg.sender] = true;
         }
 
         lastActivityAt = block.timestamp;
@@ -221,6 +226,7 @@ contract Campaign {
         if (passed) {
             pendingApprovedWithdrawal = vr.requestedAmount;
             pendingApprovedVoteId = voteId;
+            latestPassedVoteId = voteId;
             state = CampaignState.Active;
         } else {
             state = CampaignState.RefundMode;
@@ -280,11 +286,35 @@ contract Campaign {
         require(amount <= address(this).balance, "Insufficient contract balance");
 
         donors[msg.sender].totalRefunded += amount;
+        totalRaised -= amount;
         (bool ok, ) = msg.sender.call{value: amount}("");
         require(ok, "Refund transfer failed");
 
         lastActivityAt = block.timestamp;
         emit RefundClaimed(msg.sender, amount);
+    }
+
+    function claimDissenterRefund(uint256 amount) external nonReentrant {
+        require(state != CampaignState.RefundMode, "Use refund mode claim");
+        require(state != CampaignState.Cancelled, "Campaign cancelled");
+        require(amount > 0, "Amount must be > 0");
+        require(latestPassedVoteId != 0, "No approved vote yet");
+        require(votedNo[latestPassedVoteId][msg.sender], "Only latest no-voters can claim");
+
+        VoteRequest storage approvedVote = votes[latestPassedVoteId];
+        require(approvedVote.resolved && approvedVote.passed, "Approved vote not resolved");
+
+        uint256 maxRefundable = getMaxRefundable(msg.sender);
+        require(amount <= maxRefundable, "Exceeds max refundable");
+        require(amount <= address(this).balance, "Insufficient contract balance");
+
+        donors[msg.sender].totalRefunded += amount;
+        totalRaised -= amount;
+        (bool ok, ) = msg.sender.call{value: amount}("");
+        require(ok, "Refund transfer failed");
+
+        lastActivityAt = block.timestamp;
+        emit DissenterRefundClaimed(msg.sender, latestPassedVoteId, amount);
     }
 
     function cancelCampaign() external onlyCreator nonReentrant {
@@ -301,6 +331,7 @@ contract Campaign {
             uint256 maxRefundable = getMaxRefundable(donorAddr);
             if (maxRefundable > 0) {
                 donors[donorAddr].totalRefunded += maxRefundable;
+                totalRaised -= maxRefundable;
                 (bool ok, ) = donorAddr.call{value: maxRefundable}("");
                 require(ok, "Auto refund transfer failed");
                 emit RefundClaimed(donorAddr, maxRefundable);
@@ -312,11 +343,13 @@ contract Campaign {
         emit CampaignCancelled();
     }
 
-    function triggerEmergencyRefund() external {
-        require(state == CampaignState.Active, "Campaign not active");
-        require(activeVoteId == 0, "Vote active");
-        require(block.timestamp >= lastActivityAt + emergencyTimeout, "Timeout not reached");
+    function triggerEmergencyRefund() external onlyCreator {
+        require(state == CampaignState.Active || state == CampaignState.VotingActive, "Cannot trigger now");
 
+        // Creator can force emergency refund in development/testing mode.
+        activeVoteId = 0;
+        pendingApprovedWithdrawal = 0;
+        pendingApprovedVoteId = 0;
         state = CampaignState.RefundMode;
         lastActivityAt = block.timestamp;
 
@@ -340,5 +373,18 @@ contract Campaign {
 
     function getVoteWeight(uint256 voteId, address donorAddr) external view returns (uint256) {
         return voteWeights[voteId][donorAddr];
+    }
+
+    function canClaimDissenterRefund(address donorAddr) external view returns (bool) {
+        if (latestPassedVoteId == 0) {
+            return false;
+        }
+        if (state == CampaignState.RefundMode || state == CampaignState.Cancelled || state == CampaignState.Successful) {
+            return false;
+        }
+        if (!votedNo[latestPassedVoteId][donorAddr]) {
+            return false;
+        }
+        return getMaxRefundable(donorAddr) > 0;
     }
 }

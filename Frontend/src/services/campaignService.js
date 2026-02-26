@@ -15,10 +15,13 @@ export async function fetchCampaignDetails(address, provider, viewerAddress) {
     emergencyTimeout,
     totalRaised,
     totalWithdrawn,
+    nextVoteId,
     activeVoteId,
+    latestPassedVoteId,
     pendingApprovedWithdrawal,
     state,
     donorRecord,
+    canClaimDissenter,
     maxRefundable,
   ] = await Promise.all([
     campaign.title(),
@@ -28,10 +31,13 @@ export async function fetchCampaignDetails(address, provider, viewerAddress) {
     campaign.emergencyTimeout(),
     campaign.totalRaised(),
     campaign.totalWithdrawn(),
+    campaign.nextVoteId(),
     campaign.activeVoteId(),
+    campaign.latestPassedVoteId(),
     campaign.pendingApprovedWithdrawal(),
     campaign.state(),
     viewerAddress ? campaign.donors(viewerAddress) : Promise.resolve([0n, 0n, 0n, false]),
+    viewerAddress ? campaign.canClaimDissenterRefund(viewerAddress) : Promise.resolve(false),
     viewerAddress ? campaign.getMaxRefundable(viewerAddress) : Promise.resolve(0n),
   ]);
 
@@ -53,6 +59,25 @@ export async function fetchCampaignDetails(address, provider, viewerAddress) {
     };
   }
 
+  const voteHistory = [];
+  const totalVotes = Number(nextVoteId);
+  for (let i = 1; i <= totalVotes; i += 1) {
+    const vote = await campaign.votes(i);
+    voteHistory.push({
+      id: Number(vote.id),
+      proofIpfsHash: vote.proofIpfsHash,
+      requestedAmount: vote.requestedAmount.toString(),
+      snapshotTotalRaised: vote.snapshotTotalRaised.toString(),
+      yesWeight: vote.yesWeight.toString(),
+      noWeight: vote.noWeight.toString(),
+      participationWeight: vote.participationWeight.toString(),
+      startAt: Number(vote.startAt),
+      endAt: Number(vote.endAt),
+      resolved: vote.resolved,
+      passed: vote.passed,
+    });
+  }
+
   return {
     title,
     description,
@@ -61,7 +86,9 @@ export async function fetchCampaignDetails(address, provider, viewerAddress) {
     emergencyTimeout: Number(emergencyTimeout),
     totalRaised: totalRaised.toString(),
     totalWithdrawn: totalWithdrawn.toString(),
+    nextVoteId: Number(nextVoteId),
     pendingApprovedWithdrawal: pendingApprovedWithdrawal.toString(),
+    latestPassedVoteId: Number(latestPassedVoteId),
     activeVoteId: Number(activeVoteId),
     state: Number(state),
     stateLabel: campaignStateLabels[Number(state)] || "Unknown",
@@ -71,8 +98,10 @@ export async function fetchCampaignDetails(address, provider, viewerAddress) {
       withdrawnShare: donorRecord.withdrawnShare?.toString?.() || "0",
       exists: Boolean(donorRecord.exists),
       maxRefundable: maxRefundable.toString(),
+      canClaimDissenter: Boolean(canClaimDissenter),
     },
     activeVote,
+    voteHistory,
   };
 }
 
@@ -118,6 +147,13 @@ export async function withdrawApproved(address, signer) {
 export async function claimRefund(address, signer, amountEth) {
   const campaign = getCampaignContract(address, signer);
   const tx = await campaign.claimRefund(parseEther(String(amountEth)));
+  await tx.wait();
+  return tx.hash;
+}
+
+export async function claimDissenterRefund(address, signer, amountEth) {
+  const campaign = getCampaignContract(address, signer);
+  const tx = await campaign.claimDissenterRefund(parseEther(String(amountEth)));
   await tx.wait();
   return tx.hash;
 }

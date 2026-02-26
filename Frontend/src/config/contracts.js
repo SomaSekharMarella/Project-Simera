@@ -2,6 +2,10 @@ export const SEPOLIA_CHAIN_ID = 11155111;
 export const FACTORY_ADDRESS = import.meta.env.VITE_FACTORY_ADDRESS || "";
 export const PINATA_JWT = import.meta.env.VITE_PINATA_JWT || "";
 export const PINATA_GATEWAY = import.meta.env.VITE_PINATA_GATEWAY || "https://gateway.pinata.cloud/ipfs/";
+export const IPFS_GATEWAY =
+  import.meta.env.VITE_IPFS_GATEWAY || import.meta.env.VITE_PINATA_GATEWAY || "https://ipfs.filebase.io/ipfs/";
+export const IPFS_RPC_URL = import.meta.env.VITE_IPFS_RPC_URL || "";
+export const IPFS_RPC_AUTH = import.meta.env.VITE_IPFS_RPC_AUTH || "";
 
 export const factoryAbi = [
   "function createCampaign(string title,string description,uint256 initialGoal,uint256 emergencyTimeout) returns (address)",
@@ -18,7 +22,9 @@ export const campaignAbi = [
   "function emergencyTimeout() view returns (uint256)",
   "function totalRaised() view returns (uint256)",
   "function totalWithdrawn() view returns (uint256)",
+  "function nextVoteId() view returns (uint256)",
   "function activeVoteId() view returns (uint256)",
+  "function latestPassedVoteId() view returns (uint256)",
   "function pendingApprovedWithdrawal() view returns (uint256)",
   "function pendingApprovedVoteId() view returns (uint256)",
   "function state() view returns (uint8)",
@@ -28,9 +34,11 @@ export const campaignAbi = [
   "function finalizeVote()",
   "function withdrawApprovedAmount()",
   "function claimRefund(uint256 amount)",
+  "function claimDissenterRefund(uint256 amount)",
   "function cancelCampaign()",
   "function triggerEmergencyRefund()",
   "function getMaxRefundable(address donorAddr) view returns (uint256)",
+  "function canClaimDissenterRefund(address donorAddr) view returns (bool)",
   "function votes(uint256 voteId) view returns (uint256 id,string proofIpfsHash,uint256 requestedAmount,uint256 snapshotTotalRaised,uint256 yesWeight,uint256 noWeight,uint256 participationWeight,uint256 startAt,uint256 endAt,bool resolved,bool passed)",
   "function donors(address donor) view returns (uint256 totalDonated,uint256 totalRefunded,uint256 withdrawnShare,bool exists)",
 ];

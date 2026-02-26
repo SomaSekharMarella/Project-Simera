@@ -117,6 +117,12 @@ button:disabled {
   gap: 8px;
 }
 
+.history-item {
+  border-top: 1px solid #e5e7eb;
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
 .error-text {
   color: #dc2626;
 }

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { formatEther } from "ethers";
-import { PINATA_GATEWAY, SEPOLIA_CHAIN_ID } from "../config/contracts";
+import { IPFS_GATEWAY, SEPOLIA_CHAIN_ID } from "../config/contracts";
 import { useWallet } from "../contexts/WalletContext";
 import {
   cancelCampaign,
   castVote,
+  claimDissenterRefund,
   claimRefund,
   donateToCampaign,
   fetchCampaignDetails,
@@ -22,6 +23,18 @@ function formatWei(wei) {
   } catch {
     return "0";
   }
+}
+
+function buildProofUrl(hash) {
+  const trimmed = (hash || "").trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+  const cid = trimmed.replace("ipfs://", "");
+  return `${IPFS_GATEWAY}${cid}`;
 }
 
 export default function CampaignDetail() {
@@ -94,20 +107,25 @@ export default function CampaignDetail() {
   }
 
   async function handleProofSubmit() {
-    let proofHash = proofHashInput.trim();
-    if (!proofHash && proofFile) {
-      setStatus("Uploading proof file to IPFS...");
-      proofHash = await uploadFileToPinata(proofFile);
-      setProofHashInput(proofHash);
-    }
-    if (!proofHash) {
-      throw new Error("Provide proof hash or upload a proof file.");
-    }
+    try {
+      let proofHash = proofHashInput.trim();
+      if (!proofHash && proofFile) {
+        setStatus("Uploading proof file to Filebase IPFS...");
+        proofHash = await uploadFileToPinata(proofFile);
+        setProofHashInput(proofHash);
+      }
+      if (!proofHash) {
+        setStatus("Provide proof hash or upload a proof file.");
+        return;
+      }
 
-    const votingSeconds = Number(votingDurationHours) * 60 * 60;
-    return withSignerAction((signer) =>
-      submitProof(campaignAddress, signer, proofHash, requestedAmountEth, votingSeconds)
-    );
+      const votingSeconds = Number(votingDurationHours) * 60 * 60;
+      return withSignerAction((signer) =>
+        submitProof(campaignAddress, signer, proofHash, requestedAmountEth, votingSeconds)
+      );
+    } catch (err) {
+      setStatus(err?.message || "File upload failed. Check Filebase credentials.");
+    }
   }
 
   if (loading) {
@@ -124,9 +142,7 @@ export default function CampaignDetail() {
   }
 
   const activeVote = campaign.activeVote;
-  const proofPreview = activeVote?.proofIpfsHash
-    ? `${PINATA_GATEWAY}${activeVote.proofIpfsHash.replace("ipfs://", "")}`
-    : "";
+  const proofPreview = buildProofUrl(activeVote?.proofIpfsHash || "");
 
   return (
     <section>
@@ -158,6 +174,12 @@ export default function CampaignDetail() {
           <p>
             <strong>Your Max Refundable:</strong> {formatWei(campaign.donor.maxRefundable)} ETH
           </p>
+          {isCreator && Number(campaign.pendingApprovedWithdrawal) > 0 && (
+            <p>
+              <strong>Voting Success:</strong> You can withdraw{" "}
+              {formatWei(campaign.pendingApprovedWithdrawal)} ETH now.
+            </p>
+          )}
         </article>
 
         <article className="card">
@@ -181,9 +203,22 @@ export default function CampaignDetail() {
             value={refundEth}
             onChange={(e) => setRefundEth(e.target.value)}
           />
-          <button disabled={busy} onClick={() => withSignerAction((signer) => claimRefund(campaignAddress, signer, refundEth))}>
-            Claim Refund
-          </button>
+          {campaign.state === 2 && (
+            <button
+              disabled={busy}
+              onClick={() => withSignerAction((signer) => claimRefund(campaignAddress, signer, refundEth))}
+            >
+              Claim Refund (Refund Mode)
+            </button>
+          )}
+          {campaign.donor.canClaimDissenter && (
+            <button
+              disabled={busy}
+              onClick={() => withSignerAction((signer) => claimDissenterRefund(campaignAddress, signer, refundEth))}
+            >
+              Claim Refund (No-voter after pass)
+            </button>
+          )}
         </article>
       </div>
 
@@ -222,10 +257,44 @@ export default function CampaignDetail() {
             <button disabled={busy} onClick={() => withSignerAction((signer) => castVote(campaignAddress, signer, false))}>
               Vote Disagree
             </button>
-            <button disabled={busy} onClick={() => withSignerAction((signer) => finalizeVote(campaignAddress, signer))}>
-              Finalize Vote
-            </button>
+            {isCreator && (
+              <button disabled={busy} onClick={() => withSignerAction((signer) => finalizeVote(campaignAddress, signer))}>
+                Finalize Vote
+              </button>
+            )}
           </div>
+        </article>
+      )}
+
+      {campaign.voteHistory?.length > 0 && (
+        <article className="card">
+          <h3>Proof History</h3>
+          {campaign.voteHistory
+            .slice()
+            .reverse()
+            .map((vote) => {
+              const url = buildProofUrl(vote.proofIpfsHash);
+              return (
+                <div key={vote.id} className="history-item">
+                  <p>
+                    <strong>Vote #{vote.id}</strong> - {vote.resolved ? (vote.passed ? "Passed" : "Failed") : "Active"}
+                  </p>
+                  <p>
+                    <strong>Requested:</strong> {formatWei(vote.requestedAmount)} ETH
+                  </p>
+                  <p>
+                    <strong>Proof:</strong> {vote.proofIpfsHash || "-"}
+                  </p>
+                  {url && (
+                    <p>
+                      <a href={url} target="_blank" rel="noreferrer">
+                        Open proof file
+                      </a>
+                    </p>
+                  )}
+                </div>
+              );
+            })}
         </article>
       )}
 
@@ -274,12 +343,15 @@ export default function CampaignDetail() {
         </article>
       )}
 
-      <article className="card">
-        <h3>Emergency Action</h3>
-        <button disabled={busy} onClick={() => withSignerAction((signer) => triggerEmergencyRefund(campaignAddress, signer))}>
-          Trigger Emergency Refund
-        </button>
-      </article>
+      {isCreator && (
+        <article className="card">
+          <h3>Emergency Action</h3>
+          <p>Creator can force refund mode for all donors (development mode).</p>
+          <button disabled={busy} onClick={() => withSignerAction((signer) => triggerEmergencyRefund(campaignAddress, signer))}>
+            Trigger Emergency Refund
+          </button>
+        </article>
+      )}
 
       {status && <p>{status}</p>}
     </section>

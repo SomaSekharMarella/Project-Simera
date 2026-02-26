@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "D:\\Blocks\\CROWD\\Backend\\contracts\\Campaign.sol": {
-      "lastModificationDate": 1771759837011,
-      "contentHash": "887fdc63d5f6d5faaee4e51ea7d6cf02",
+      "lastModificationDate": 1772133597099,
+      "contentHash": "2472654d45aa5057bb41d199fd4008b1",
       "sourceName": "contracts/Campaign.sol",
       "solcConfig": {
         "version": "0.8.28",
